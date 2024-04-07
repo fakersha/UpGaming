@@ -6,32 +6,28 @@ using UpGaming.Infrastructure.Models;
 
 namespace UpGaming.Infrastructure.Implements.Repositories
 {
-    public class UserRepository : IUserRepository
+    public class UserRepository : IUserRepository, IAsyncDisposable
     {
         private readonly string _connectionString;
+        private readonly SqlConnection _connection;
+
         public UserRepository(DbConnectionString dbConnectionString)
         {
             _connectionString = dbConnectionString.ConnectionString;
+            _connection = new SqlConnection(_connectionString);
+
         }
 
         public async Task<List<UserDto>> GetAllUsersAsync()
         {
-            using (var connection = new SqlConnection(_connectionString))
-            {
-                await connection.OpenAsync();
-
-                string sql = "SELECT * FROM [User]";
-                return (await connection.QueryAsync<UserDto>(sql)).ToList();
-            }
+            string sql = "SELECT * FROM [User]";
+            return (await _connection.QueryAsync<UserDto>(sql)).ToList();
         }
 
         public async Task<List<UserInfo>> GetUserInfosAsync(int userId)
         {
-            using (var connection = new SqlConnection(_connectionString))
-            {
-                await connection.OpenAsync();
 
-                string sql = @"
+            string sql = @"
                 WITH UserMonthScores AS (
                     SELECT
                         MONTH(s.CreateDate) AS Month,
@@ -55,27 +51,28 @@ namespace UpGaming.Infrastructure.Implements.Repositories
                 WHERE UserId = @UserId";
 
 
-                var userInfo = await connection.QueryAsync<UserInfo>(sql, new { UserId = userId });
+            var userInfo = await _connection.QueryAsync<UserInfo>(sql, new { UserId = userId });
 
-                return userInfo.ToList();
-            }
+            return userInfo.ToList();
+
         }
 
         public async Task UploadUserDataAsync(List<UserData> users)
         {
-            using (var connection = new SqlConnection(_connectionString))
+            foreach (var user in users)
             {
-                await connection.OpenAsync();
-
-                foreach (var user in users)
-                {
-                    string sql = @"
+                string sql = @"
                     INSERT INTO [User] (FirstName, LastName, UserName)
                     VALUES (@FirstName, @LastName, @UserName)";
 
-                    await connection.ExecuteAsync(sql, user);
-                }
+                await _connection.ExecuteAsync(sql, user);
             }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _connection.CloseAsync();
+            await _connection.DisposeAsync();
         }
     }
 }
